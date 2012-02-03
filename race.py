@@ -21,6 +21,10 @@ X = np.array([1, 0])
 Y = np.array([0, 1])
 O = 0*X
 
+P_JITTER = 0.05
+
+PLAY_TIME = 10
+
 COLORS = [
     (0.0, 0.0, 1.0),   # 'b'
     (0.0, 0.5, 0.0),   # 'g'
@@ -32,63 +36,77 @@ COLORS = [
     (1.0, 1.0, 1.0),   # 'w'
     ]
 
-def manhattan_dist(p1, p2):
-    return abs(p2[0]-p1[0]) + abs(p2[1]-p1[1])
+############### players #################
 
-def insert(p1, p2):
-    assert manhattan_dist(p1, p2) == 2, 'positions too far away'
-    return [(p1[0], p2[1]), (p2[0], p1[1])]
+class Player:
+
+    def __init__(self, index, color, position):
+        self.id = index
+        self.color = color
+        self.p = position
+        self.v = O.copy()
+        self.history = [tuple(position)]
+        self.play = 0
+
+    def rec_position(self):
+        """
+        records actual position
+        """
+        self.history.append(tuple(self.p) )
+
+    def reset_pos(self):
+        self.p = np.array(self.history[0])
+
+############## race #####################
 
 class Race:
 
-    def __init__(self, N, R, start, end, color_style = 'rgb'):
+    def __init__(self, n, race, start, end, color_style = 'rgb'):
         """
         N: # players
-        R: race - boolean matrix
+        race: race - boolean matrix
         start, end : [(xi, yi)]
         """
-        self.N = N
-        self.R = np.zeros((R.shape[0]+2,R.shape[1]+2), R.dtype)
-        self.R[1:-1, 1:-1] = R
+        self.n = n
+        self.players = []
         np.random.shuffle(start)
+        for idx in xrange(n):
+            if color_style == 'rgb':
+                color = COLORS[idx]
+            else:
+                color = np.random.rand(3)
+                while color.std()<0.1:
+                    color = np.random.rand(3)
+            self.players.append(Player(idx, color, np.array(start[idx])+X) )
+        self.race = np.zeros((race.shape[0]+2,race.shape[1]+2), race.dtype)
+        self.race[1:-1, 1:-1] = race
         self.end = []
         for pos in end:
             self.end.append((pos[0]+1, pos[1]+1))
-        self.p = np.zeros((N, 2), int)
-        for pl in xrange(N):
-            self.p[pl] = (start[pl][0]+1, start[pl][1]+1)
-        self.play = [0 for pl in xrange(N)]
-        self.v = np.zeros((N, 2), int)
-        self.colors = []
-        for i in xrange(self.N):
-            if color_style == 'rgb':
-                self.colors.append(np.array(COLORS[i]) )
-            else:
-                col = np.random.rand(3)
-                while col.std()<0.1:
-                    col = np.random.rand(3)
-                self.colors.append(col)
-        self.pos_history = [[] for i in xrange(N)]
-        self.rec_pos()
         plt.figure()
-        self.im = plt.imshow(np.zeros(self.R.shape+(3,)),
+        self.im = plt.imshow(np.zeros(self.race.shape+(3,)),
                              **plot_dic)
 
-    def next_pos(self, pl):
+    def next_pos(self, idx):
+        """
+        returns a list of possible
+        moves for player nb idx
+        """
         dirs = [X, -X, Y, -Y, 0*X]
-        return [tuple(self.p[pl]+self.v[pl]+d)
+        player = self.players[idx]
+        return [tuple(player.p + player.v + d)
                 for d in dirs]
 
-    def A(self, pl):
-        A = self.R.copy()
-        for j in xrange(self.N):
-            if pl != j:
-                A[tuple(self.p[j])] = False
-        return A
-
-    def available(self, A, pos):
+    def available(self, idx, pos):
+        """
+        tests if pos is available
+        """
+        for i in xrange(self.n):
+            if idx != i and \
+                    pos == tuple(self.players[i].p):
+                return False
         try:
-            ok = A[tuple(pos)]
+            ok = self.race[pos]
         except IndexError, err:
             ok = False
         if pos[0]<0 or pos[1]<0:
@@ -96,6 +114,10 @@ class Race:
         return ok
 
     def path(self, pos, aim):
+        """
+        the path from pos to aim
+        returns a list of positions
+        """
         vel = aim - pos
         dx, dy = tuple(vel)
         way = np.clip(vel, -1, 1)
@@ -121,8 +143,18 @@ class Race:
         path.append(tuple(aim) )
         return path
 
-    def next_move(self, pl):
-        self.image(pl)
+    def manhattan_dist(self, p1, p2):
+        return abs(p2[0]-p1[0]) + abs(p2[1]-p1[1])
+
+    def insert(self, p1, p2):
+        assert self.manhattan_dist(p1, p2) == 2, 'positions too far away'
+        return [(p1[0], p2[1]), (p2[0], p1[1])]
+
+    def next_move(self, idx):
+        """
+        asks what to do next
+        """
+        self.image(idx)
         tmp = raw_input(
             '\nnext move? (use numpad or w-a-s-d-x) ')
         if tmp in UP:
@@ -141,95 +173,119 @@ class Race:
             return self.next_move(pl)
 
     def jitter(self):
-        if np.random.rand() < 0.95:
+        """
+        returns random direction with
+        probability P_JITTER (else 0)
+        """
+        if np.random.rand() < 1-P_JITTER:
             direction = O
         else:
             direction = self.rand_dir()
         return direction
 
     def rand_dir(self):
+        """
+        returns random direction
+        """
         sign = (2*np.random.randint(0,2)-1)
         direction = X + (Y-X)*(
             np.random.rand()<0.5)
         return sign*direction
 
     def rec_pos(self):
-        for pl in xrange(self.N):
-            self.pos_history[pl].append(tuple(self.p[pl]))
+        """
+        records all positions
+        """
+        for player in self.players:
+            player.rec_position()
 
-    def turn(self, pl):
+    def turn(self, idx):
+        """
+        one turn
+        """
         t = time()
-        dv = self.next_move(pl)
-        if (time()-t)>10:
+        dv = self.next_move(idx)
+        if (time()-t) > PLAY_TIME:
             dv = self.jitter()
-        self.v[pl] += dv
-        return self.move(pl)
+        self.players[idx].v += dv
+        return self.move(idx)
 
-    def win_check(self, pl, pos):
-        win = False
-        if pos in self.end:
-            print 'player %i wins !'%pl
-            self.p[pl] = pos
-            self.image()
-            win = True
-        return win
-    
-    def crash(self, pl, pos, prev_pos):
+    def move(self, idx):
+        """
+        one move
+        returns False if anyone has won
+        """
         running = True
-        print 'you crashed...'
-        v = abs(self.v[pl]).sum()
-        self.play[pl] = np.ceil(
-            -(1+v)+np.sqrt(1+2*v*(v+1)))
-        v_crash = self.v[pl].copy()
-        self.v[pl] *= 0
-        self.p[pl] = prev_pos
-        self.image(crash = pl)
-        for plr in xrange(self.N):
-            if tuple(self.p[plr]) == pos:
-                self.v[plr] = (0.5*v_crash).round()
-                running = self.move(plr)
-                self.v[plr] = self.rand_dir()
-                break
-        return running
-    
-    def move(self, pl):
-        running = True
-        A = self.A(pl)
-        player_pos = self.p[pl].copy()
-        aim = player_pos + self.v[pl]
-        x1, y1 = player_pos[0], player_pos[1]
-        path = self.path(player_pos, aim)
+        player = self.players[idx]
+        start = player.p
+        aim = start + player.v
+        path = self.path(start, aim)
         prev_pos = path.pop(0)
         for pos in path:
             # skip a corner
-            if manhattan_dist(pos, prev_pos)>1:
-                ways = insert(pos, prev_pos)
-                if not self.available(A, ways[0]) and\
-                         not self.available(A, ways[1]):
+            if self.manhattan_dist(pos, prev_pos) > 1:
+                ways = self.insert(pos, prev_pos)
+                if not self.available(idx, ways[0]) and\
+                         not self.available(idx, ways[1]):
                     np.random.shuffle(ways)
-                    running *= self.crash(pl, ways[0], prev_pos)
+                    running *= self.crash(idx, ways[0], prev_pos)
                     break
                 else:
                     for pos2 in ways:
-                        if self.win_check(pl, pos2):
+                        if self.win_check(idx, pos2):
                             running = False
                             prev_pos = pos
                             break
             # crash
-            if not self.available(A, pos):
-                running *= self.crash(pl, pos, prev_pos)
+            if not self.available(idx, pos):
+                running *= self.crash(idx, pos, prev_pos)
                 break
-            # no crash
-            if self.win_check(pl, pos):
+            # win ?
+            if self.win_check(idx, pos):
                 running = False
                 prev_pos = pos
                 break
+            # advance
             prev_pos = pos
-        self.p[pl] = prev_pos
+        player.p = prev_pos
         self.image()
         return running
 
-    def image(self, pl = None, crash = None, hist = None):
+    def win_check(self, idx, pos):
+        """
+        returns False if on the winning line
+        """
+        win = False
+        if pos in self.end:
+            print 'player %i wins !'%idx
+            self.image()
+            win = True
+        return win
+    
+    def crash(self, idx, pos, prev_pos):
+        """
+        crash
+        """
+        running = True
+        print 'you crashed...'
+        player = self.players[idx]
+        v_crash = player.v.copy()
+        v = abs(v_crash).sum()
+        player.play = np.ceil(
+            -(1+v)+np.sqrt(1+2*v*(v+1)))
+        player.v *= 0
+        player.p = prev_pos
+        self.image(crash = idx)
+        for plr in xrange(self.n):
+            if tuple(self.players[plr].p) == pos:
+                player = self.players[plr]
+                player.v = (0.5*v_crash).round()
+                running = self.move(plr)
+                player.v = self.rand_dir()
+                break
+        return running    
+
+    def image(self, idx = None, crash = None, hist = None):
         # color def
         red = np.array([0.7, 0, 0])
         yellow = np.array([0.9, 0.8, 0])
@@ -237,23 +293,26 @@ class Race:
         white = 0.8*unif
         grey = 0.4*unif
         # Image
-        im = grey*np.ones(self.R.shape+(3,))
+        im = grey*np.ones(self.race.shape+(3,))
         # race
-        im[self.R] = white
+        im[self.race] = white
         # history
         if hist:
-            for plr in xrange(self.N):
-                for pos in self.pos_history[plr][:hist]:
-                    im[pos] = self.colors[plr]
+            for plr in xrange(self.n):
+                player = self.players[plr]
+                for pos in player.history[:hist]:
+                    im[pos] = player.color
         # players
-        for plr in xrange(self.N):
-            im[tuple(self.p[plr])] = self.colors[plr]
+        for plr in xrange(self.n):
+            player = self.players[plr]
+            im[tuple(player.p)] = player.color
         # player turn
-        if pl >= 0:
-            im[[0,-1]] = self.colors[pl]
-            im[:, [0,-1]] = self.colors[pl]
+        if idx >= 0:
+            color = self.players[idx].color
+            im[[0,-1]] = color
+            im[:, [0,-1]] = color
             # move
-            for pos in self.next_pos(pl):
+            for pos in self.next_pos(idx):
                 if pos[0]>-1 and pos[1]>-1:
                     try:
                         im[pos] *= 0.3
@@ -261,8 +320,8 @@ class Race:
                     except IndexError: pass
         # explosion
         if crash >= 0:
-            size = int(self.play[crash])
-            x,y = tuple(self.p[crash])
+            size = int(self.players[crash].play)
+            x,y = tuple(self.players[crash].p)
             it = product(range(x-size,x+size+1),
                          range(y-size,y+size+1))
             for a,b in it:
@@ -275,26 +334,27 @@ class Race:
         sleep(0.3)
 
     def replay(self):
-        for i in xrange(len(self.pos_history[0])+1):
+        for i in xrange(len(self.players[0].history)+1):
             self.image(hist = i)
 
     def run(self):
         running = True
         while running:
-            for pl in xrange(self.N):
+            for idx in xrange(self.n):
+                player = self.players[idx]
                 if not running: break
-                if not self.play[pl]:
+                if not player.play:
                     print '- - - - - - - - - - -\nplayer %i turn' \
-                        %pl
-                    running = self.turn(pl)
+                        %idx
+                    running = self.turn(idx)
                 else:
                     print '- - - - - - - - - - -'
                     print 'player %i misses %i turn' \
-                        %(pl, self.play[pl])
-                    self.play[pl] -= 1
+                        %(idx, player.play)
+                    player.play -= 1
             self.rec_pos()
-        for pl in xrange(self.N):
-            self.p[pl] = self.pos_history[pl][0]
+        for idx in xrange(self.n):
+            self.players[idx].reset_pos()
         while 1:
             tmp = raw_input('for no replay, press "q"')
             if tmp == 'q':
