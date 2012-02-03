@@ -95,154 +95,30 @@ class Race:
             ok = False
         return ok
 
-    # def path(self, pl, horizontal = False):
-    #     pos = self.p[pl].copy()
-    #     vel = self.v[pl].copy()
-    #     way = np.clip(vel, -1, 1)
-    #     vel = abs(vel)
-    #     drc = (X, Y)
-    #     idx = 0 + 1*(vel[1]>vel[0])
-    #     if horizontal: idx = 1
-    #     q, r = divmod(vel.max(), max(vel.min(),2))
-    #     d = 0
-    #     path = []
-    #     for j in xrange(vel.min()):
-    #         for k in xrange(q):
-    #             pos += way[idx]*drc[idx]
-    #             path.append(tuple(pos))
-    #             d += 1
-    #         pos += way[1-idx]*drc[1-idx]
-    #         path.append(tuple(pos))
-    #         d += 1
-    #     for j in xrange(vel.sum()-d):
-    #         pos += way[idx]*drc[idx]
-    #         path.append(tuple(pos))
-    #         d += 1
-    #     return path
-
-    def path(self, x1, y1, x2, y2):
+    def path(self, pos, aim):
+        vel = aim - pos
+        dx, dy = tuple(vel)
+        way = np.clip(vel, -1, 1)
+        vel = abs(vel)
+        drc = (X, Y)
+        idx = 0 + 1*(vel[1]>vel[0])
         path = []
-        dx, dy = x2 - x1, y2 - y1
-        if dx > 0:
-            if dy > 0:
-                if dx >= dy:
-                    e = dx
-                    dx *= 2
-                    dy *= 2
-                    while 1:
-                        path.append( (x1, y1) )
-                        x1 += 1
-                        if x1 == x2: break
-                        e -= dy
-                        if e < 0:
-                            y1 += 1
-                            e += dx
-                else: # dx < dy
-                    e = dy
-                    dy *= 2
-                    dx *= 2
-                    while 1:
-                        path.append( (x1, y1) )
-                        y1 += 1
-                        if y1 == y2: break
-                        e -= dx
-                        if e < 0:
-                            x1 += 1
-                            e += dy
-            elif dy < 0: # (dx > 0)
-                if dx >= -dy:
-                    e = dx
-                    dx *= 2
-                    dy *= 2
-                    while 1:
-                        path.append( (x1, y1) )
-                        x1 += 1
-                        if x1 == x2: break
-                        e += dy
-                        if e < 0:
-                            y1 -= 1
-                            e += dx
-                else: # dx < -dy
-                    e = dy
-                    dy *= 2
-                    dx *= 2
-                    while 1:
-                        path.append( (x1, y1) )
-                        y1 -= 1
-                        if y1 == y2: break
-                        e += dx
-                        if e > 0:
-                            x1 += 1
-                            e += dy
-            else: # dy = 0 (dx > 0)
-                while x1 < x2:
-                    path.append( (x1, y1) )
-                    x1 += 1
-        elif dx < 0:
-            if dy > 0:
-                if -dx >= dy:
-                    e = dx
-                    dx *= 2
-                    dy *= 2
-                    while 1:
-                        path.append( (x1, y1) )
-                        x1 -= 1
-                        if x1 == x2: break
-                        e += dy
-                        if e >= 0:
-                            y1 += 1
-                            e += dx
-                else: # -dx < dy
-                    e = dy
-                    dy *= 2
-                    dx *= 2
-                    while 1:
-                        path.append( (x1, y1) )
-                        y1 += 1
-                        if y1 == y2: break
-                        e += dx
-                        if e <= 0:
-                            x1 -= 1
-                            e += dy
-            elif dy < 0: # (dx < 0)
-                if dx <= dy:
-                    e = dx
-                    dx *= 2
-                    dy *= 2
-                    while 1:
-                        path.append( (x1, y1) )
-                        x1 -= 1
-                        if x1 == x2: break
-                        e -= dy
-                        if e >= 0:
-                            y1 -= 1
-                            e += dx
-                else: # dx < dy
-                    e = dy
-                    dy *= 2
-                    dx *= 2
-                    while 1:
-                        path.append( (x1, y1) )
-                        y1 -= 1
-                        if y1 == y2: break
-                        e -= dx
-                        if e >= 0:
-                            x1 -= 1
-                            e += dy
-            else: # dy = 0 (dx < 0)
-                while x1 > x2:
-                    path.append( (x1, y1) )
-                    x1 -= 1
-        else: # dx = 0
-            if dy > 0:
-                while y1 < y2:
-                    path.append( (x1, y1) )
-                    y1 += 1
-            elif dy < 0:
-                while y1 > y2:
-                    path.append( (x1, y1) )
-                    y1 -= 1
-        path.append( (x2, y2) )
+        if vel[1-idx] == 0:
+            while pos[idx] < aim[idx]:
+                path.append(tuple(pos) )
+                pos += way[idx]*drc[idx]
+        else:
+            e = vel[idx]
+            vel *= 2
+            while 1:
+                path.append(tuple(pos) )
+                pos += way[idx]*drc[idx]
+                if pos[idx] == aim[idx]: break
+                e -= vel[1-idx]
+                if e < 0:
+                    pos += way[1-idx]*drc[1-idx]
+                    e += vel[idx]
+        path.append(tuple(aim) )
         return path
 
     def next_move(self, pl):
@@ -289,42 +165,6 @@ class Race:
         self.v[pl] += dv
         return self.move(pl)
 
-    # def move(self, pl, retry = True, crashed_in = False):
-    #     running = True
-    #     A = self.A(pl)
-    #     p = self.p[pl].copy()
-    #     for pos in self.path(pl, horizontal = not retry):
-    #         if pos in self.end:
-    #             print 'you won !'
-    #             self.p[pl] = pos
-    #             self.image()
-    #             return False
-    #         if not self.available(A, pos):
-    #             if abs(self.v[pl, 0]) == \
-    #                     abs(self.v[pl, 1]) and retry:
-    #                 return self.move(pl, retry = False)
-    #             print 'you crashed...'
-    #             v = abs(self.v[pl]).sum()
-    #             self.play[pl] = np.ceil(
-    #                 -(1+v)+np.sqrt(1+2*v*(v+1)))
-    #             self.p[pl] = p
-    #             v_crash = self.v[pl].copy()
-    #             self.v[pl] *= 0
-    #             self.image(crash = pl)
-    #             for plr in xrange(self.N):
-    #                 if tuple(self.p[plr]) == pos:
-    #                     self.v[plr] = (self.v[plr] +
-    #                                    0.5*v_crash).round()
-    #                     running *= self.move(plr,
-    #                                          crashed_in = True)
-    #             break
-    #         else:
-    #             self.p[pl] = pos
-    #         p = pos
-    #     if crashed_in: self.v[pl] = self.rand_dir()
-    #     self.image()
-    #     return running
-
     def win_check(self, pl, pos):
         win = False
         if pos in self.end:
@@ -358,7 +198,7 @@ class Race:
         player_pos = self.p[pl].copy()
         aim = player_pos + self.v[pl]
         x1, y1 = player_pos[0], player_pos[1]
-        path = self.path(x1, y1, aim[0], aim[1])
+        path = self.path(player_pos, aim)
         prev_pos = path.pop(0)
         for pos in path:
             # skip a corner
