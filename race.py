@@ -20,9 +20,9 @@ STOP = '5s'
 QUIT = 'quit'
 MISSILE = 'm'
 
-X = np.array([1, 0])
-Y = np.array([0, 1])
-O = 0*X
+X = np.array([1, 0], int)
+Y = np.array([0, 1], int)
+O = np.zeros(2, int)
 
 COLORS = [
     (0.0, 0.0, 1.0),   # 'b'
@@ -37,12 +37,14 @@ COLORS = [
 
 ############### general algorithms ######
 
-def find_path(pos, aim):
+def find_path(position, velocity):
     """
     the path from pos to aim
     returns a list of positions
     """
-    vel = aim - pos
+    pos = position.copy()
+    vel = velocity.copy()
+    aim = pos + vel
     dx, dy = tuple(vel)
     way = np.clip(vel, -1, 1)
     vel = abs(vel)
@@ -50,7 +52,7 @@ def find_path(pos, aim):
     idx = 0 + 1*(vel[1]>vel[0])
     path = []
     if vel[1-idx] == 0:
-        while pos[idx] < aim[idx]:
+        while pos[idx] != aim[idx]:
             path.append(tuple(pos) )
             pos += way[idx]*drc[idx]
     else:
@@ -65,7 +67,7 @@ def find_path(pos, aim):
                 pos += way[1-idx]*drc[1-idx]
                 e += vel[idx]
     path.append(tuple(aim) )
-    return path
+    return path[1:]
 
 def manhattan_dist(p1, p2):
     return abs(p2[0]-p1[0]) + abs(p2[1]-p1[1])
@@ -97,8 +99,8 @@ class Element:
     def init_history(self):
         history = []
         for _ in xrange(self.race.t):
-            history.append(None)
-        history.append(self.p)
+            history.append( () )
+        history.append(tuple(self.p) )
         self.history = history
 
     def rec_position(self):
@@ -110,7 +112,10 @@ class Element:
     def fill_history(self):
         for _ in xrange(
             self.race.t-len(self.history) ):
-            history.append(None)
+            self.history.append( () )
+
+    def win(self, pos):
+        self.p = np.array(pos, int)
 
 ############### players #################
 
@@ -131,7 +136,7 @@ class Player(Element):
         """
         resets position
         """
-        self.p = np.array(self.history[0])
+        self.p = np.array(self.history[0], int)
 
     def turn(self):
         """
@@ -151,7 +156,7 @@ class Player(Element):
         returns a list of possible
         moves
         """
-        dirs = [X, -X, Y, -Y, 0*X]
+        dirs = [X, -X, Y, -Y, O]
         positions = []
         for d in dirs:
             pos = self.p + self.v + d
@@ -169,17 +174,17 @@ class Player(Element):
         tmp = raw_input(
             '\nnext move? (use numpad or w-a-s-d-x) ')
         if tmp in UP:
-            return -X, False
+            return -X.copy(), False
         elif tmp in LEFT:
-            return -Y, False
+            return -Y.copy(), False
         elif tmp in RIGHT:
-            return Y, False
+            return Y.copy(), False
         elif tmp in DOWN:
-            return X, False
+            return X.copy(), False
         elif tmp in STOP:
-            return O, False
+            return O.copy(), False
         elif tmp in MISSILE:
-            return O, True
+            return O.copy(), True
         elif tmp == QUIT:
             sys.exit()
         else:
@@ -191,7 +196,7 @@ class Player(Element):
         probability P_JITTER (else 0)
         """
         if np.random.rand() < 1-self.P_JITTER:
-            direction = O
+            direction = O.copy()
         else:
             direction = self.rand_dir()
         return direction
@@ -201,15 +206,15 @@ class Player(Element):
         returns random direction
         """
         sign = (2*np.random.randint(0,2)-1)
-        direction = X + (Y-X)*(
+        direction = X.copy() + (Y.copy()-X.copy() )*(
             np.random.rand()<0.5)
         return sign*direction
 
     def hit_speed(self):
         v = abs(self.v).sum()
-        self.play = np.ceil(
-            -(1+v)+np.sqrt(1+2*v*(v+1)))
-        self.v = O
+        self.play = int(np.ceil(
+                -(1+v)+np.sqrt(1+2*v*(v+1) ) ) )
+        self.v = O.copy()
     
     def hit(self, pos):
         """
@@ -218,7 +223,7 @@ class Player(Element):
         print 'you crashed...'
         walls = True
         for player in self.race.players:
-            if tuple(player.p) == pos:
+            if player != self and tuple(player.p) == pos:
                 walls = False
                 # to self
                 self.hit_speed()
@@ -231,14 +236,12 @@ class Player(Element):
             if tuple(missile.p) == pos:
                 walls = False
                 # to missile
-                self.race.missiles.remove(
-                    missile)
-                self.race.lost_missiles.append(missile)
+                missile.kill()
                 # graph
                 self.race.graphics.draw(
                     explosion = (pos, missile.SIZE) )
                 # to self
-                self.p = np.array(pos)
+                self.p = np.array(pos, int)
                 self.v = self.rand_dir()
         if walls:
             # to self
@@ -246,6 +249,11 @@ class Player(Element):
             # graph
             self.race.graphics.draw(
                 explosion = (pos, self.play) )
+
+    def win(self, pos):
+        Element.win(self, pos)
+        print '\nyeah\n'
+        
 
 ############## missile ##################
 
@@ -258,9 +266,13 @@ class Missile(Element):
                  car_velocity):
         vx, vy = tuple(car_velocity)
         v = np.sqrt( (car_velocity**2).sum() )
-        velocity = np.array([round(vx*self.V/v), round(vy*self.V/v)])
+        if v == 0:
+            vx = np.random.rand()
+            vy = np.random.rand()
+            v = np.sqrt(vx**2+vy**2)
+        velocity = np.array([round(vx*self.V/v), round(vy*self.V/v)], int)
         Element.__init__(self, race, index, COLORS[6],
-                         car_position, velocity)
+                         car_position.copy(), velocity)
 
     def hit(self, pos):
         for player in self.race.players:
@@ -271,16 +283,22 @@ class Missile(Element):
             if missile != self and\
                     tuple(missile.p) == pos:
                 # to missile
-                self.race.missiles.remove(
-                    missile)
-                self.race.lost_missiles.append(missile)
+                missile.kill()
         # to self
-        self.race.missiles.remove(self)
-        self.race.lost_missiles.append(missile)
+        self.kill()
         # graph
         self.race.graphics.draw(
             explosion = (pos, missile.SIZE) )
     
+    def kill(self):
+        self.rec_position()
+        self.race.missiles.remove(self)
+        self.race.lost_missiles.append(self)
+
+    def win(self, pos):
+        Element.win(self, pos)
+        self.kill()
+
 ############## circuit ##################
 
 def straight(length, width):
@@ -317,7 +335,7 @@ class Circuit:
 
     def add_obstacles(self, density):
         self.obstacles = (
-            (np.random.rand(*self.circuit.shape)<prob))
+            (np.random.rand(*self.circuit.shape)<density))
 
     def filter_obstacles(self, threshold, show = False):
         obstacles = self.obstacles.copy().astype(int)
@@ -326,25 +344,25 @@ class Circuit:
         # change zone !!!
         for pos in self.start:
             obstacles[pos] = self.START_ZONE
-        X, Y = self.circuit.shape
-        mat = np.zeros( (X, Y), float)
-        it = product(xrange(2*X), xrange(2*Y))
+        sx, sy = self.circuit.shape
+        mat = np.zeros( (sx, sy), float)
+        it = product(xrange(2*sx), xrange(2*sy))
         for x,y in it:
-            coef = func(np.sqrt( (x-X)**2 + (y-Y)**2) )
+            coef = func(np.sqrt( (x-sx)**2 + (y-sy)**2) )
             if coef>1e-6:
-                mat[max(0,x-X):min(x,X), max(0,y-Y):min(y,Y)] += coef *\
-                    obstacles[max(0,X-x): min(2*X-x,X),
-                              max(0,Y-y): min(2*Y-y,Y)]
+                mat[max(0,x-sx):min(x,sx), max(0,y-sy):min(y,sy)] += coef *\
+                    obstacles[max(0,sx-x): min(2*sx-x,sx),
+                              max(0,sy-y): min(2*sy-y,sy)]
         rand = np.random.rand(*mat.shape)
         self.obstacles = rand < threshold*mat
         if show:
             plt.figure()
             plt.subplot(221)
-            plt.imshow(obstacles)
+            plt.imshow(obstacles, **plot_dic)
             plt.subplot(222)
-            plt.imshow(final)
+            plt.imshow(self.obstacles, **plot_dic)
             plt.subplot(212)
-            plt.imshow(mat)
+            plt.imshow(mat, **plot_dic)
             plt.colorbar()
 
     def in_frame(self, pos):
@@ -401,7 +419,7 @@ class Graphics:
         x, y = replace_tuple(pos)
         it = product(range(x-size,x+size+1),
                      range(y-size,y+size+1))
-        size_x, size_y = self.image.shape
+        size_x, size_y = self.image.shape[:2]
         for a,b in it:
             if np.sqrt( (a-x)**2+(b-y)**2) <= size and\
                     (0 <= a < size_x) and \
@@ -414,7 +432,7 @@ class Graphics:
     def history(self, t):
         for element in self.race.players + self.race.lost_missiles:
             for pos in element.history[:t]:
-                if pos:
+                if len(pos) > 0:
                     pos = replace_tuple(pos)
                     self.image[pos] = element.color
 
@@ -425,7 +443,8 @@ class Graphics:
             self.image[pos] += \
                 np.array(self.red)
 
-    def draw(self, frame = None, cross = None, explosion = None, history = None):
+    def draw(self, frame = None, cross = None, explosion = None,
+             history = None):
         self.reset_image()
         for element in self.race.players + self.race.missiles:
             self.place(element)
@@ -452,21 +471,22 @@ class Race:
         self.n = n
         self.players = []
         self.missiles = []
+        self.lost_missiles = []
         self.circuit = Circuit(shape, length, width)
         starting_blocks = copy(self.circuit.start)
         np.random.shuffle(starting_blocks)
         for idx in xrange(n):
             color = COLORS[idx]
+            position = np.array(starting_blocks[idx], int)
             # color = np.random.rand(3)
             # while color.std()<0.1:
             #     color = np.random.rand(3)
             self.players.append(
-                Player(self, idx, color,
-                       np.array(starting_blocks[idx]) ) )
+                Player(self, idx, color, position) )
         self.graphics = Graphics(self, self.circuit)
 
     def reset_pos(self):
-        for player in players:
+        for player in self.players:
             player.reset_pos()
     
     def rec_pos(self):
@@ -479,7 +499,7 @@ class Race:
             missile.rec_position()
 
     def add_missile(self, player):
-        idx = len(self.missile)
+        idx = len(self.missiles)
         self.missiles.append(
             Missile(self, idx, player.p,
                     player.v) )
@@ -501,14 +521,12 @@ class Race:
         """
         one move for 'element'
         """
-        elmnt_p = element.p
-        aim = elmnt_p + element.v
-        path = find_path(elmnt_p, aim)
-        for pos in path[1:]:
-            prev_pos = tuple(elmnt_p)
+        path = find_path(element.p, element.v)
+        arrived = False
+        for pos in path:
+            prev_pos = tuple(element.p)
             # skip a corner
-            # problem !!!
-            print pos, prev_pos
+            stop = False
             if manhattan_dist(pos, prev_pos) > 1:
                 ways = insert(pos, prev_pos)
                 if not (
@@ -516,24 +534,27 @@ class Race:
                         self.available(element, ways[1]) ):
                     np.random.shuffle(ways)
                     element.hit(ways[0])
+                    stop = True
                     break
                 else:
                     for way in ways:
                         if self.circuit.win_check(way):
-                            running = False
-                            elmnt_p = way
+                            element.win(way)
+                            stop = True
                             break
+            if stop: break
             # hit
             if not self.available(element, pos):
                 element.hit(pos)
+                arrived = True
                 break
             # win ?
             if self.circuit.win_check(pos):
-                running = False
-                elmnt_p = np.array(pos)
+                element.win(pos)
+                arrived = True
                 break
             # advance
-            elmnt_p = np.array(pos)
+            element.p = np.array(pos, int)
 
     def turn(self):
         win = False
