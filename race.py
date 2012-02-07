@@ -113,6 +113,8 @@ class Player(Element):
     N_MISSILE = 2
     PLAY_TIME = 10
     P_JITTER = 0.05
+    V_IN = 0.5
+    V_INTO = 0.5
 
     def __init__(self, race, index, color,
                  position):
@@ -199,12 +201,15 @@ class Player(Element):
             np.random.rand()<0.5)
         return sign*direction
 
-    def hit_speed(self):
+    def hit_speed(self, player = None):
+        if player:
+            player.v = (self.V_IN*self.v +
+                        self.V_INTO*player.v).round()
         v = abs(self.v).sum()
         self.play = int(np.ceil(
                 -(1+v)+np.sqrt(1+2*v*(v+1) ) ) )
         self.v = O.copy()
-    
+
     def hit(self, pos):
         """
         hits wall or other element
@@ -214,13 +219,14 @@ class Player(Element):
         for player in self.race.players:
             if player != self and tuple(player.p) == pos:
                 walls = False
-                # to self
-                self.hit_speed()
+                # to self (and player.v)
+                self.hit_speed(player)
                 # graph
                 self.race.graphics.draw(
                     explosion = (pos, self.play) )
                 # to player
                 self.race.move(player)
+                player.v = self.rand_dir()
         for missile in self.race.missiles:
             if tuple(missile.p) == pos:
                 walls = False
@@ -261,7 +267,7 @@ class Missile(Element):
             v = np.sqrt(vx**2+vy**2)
         velocity = np.array([round(vx*self.V/v),
                              round(vy*self.V/v)], int)
-        Element.__init__(self, race, index, COLORS[6],
+        Element.__init__(self, race, index, 'black',
                          car_position.copy(), velocity)
 
     def hit(self, pos):
