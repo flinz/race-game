@@ -110,7 +110,7 @@ class Element:
 
 class Player(Element):
 
-    N_MISSILE = 2
+    N_MISSILE = 10
     PLAY_TIME = 10
     P_JITTER = 0.05
     V_IN = 0.5
@@ -248,6 +248,10 @@ class Player(Element):
     def win(self, pos):
         Element.win(self, pos)
         print '\nyeah\n'
+
+    def end(self):
+        self.race.players.remove(self)
+        self.race.arrived_players.append(self)
         
 
 ############## missile ##################
@@ -286,14 +290,14 @@ class Missile(Element):
         self.race.graphics.draw(
             explosion = (pos, missile.SIZE) )
     
+    def win(self, pos):
+        Element.win(self, pos)
+        self.kill()
+
     def kill(self):
         self.rec_position()
         self.race.missiles.remove(self)
         self.race.lost_missiles.append(self)
-
-    def win(self, pos):
-        Element.win(self, pos)
-        self.kill()
 
 ############## circuit ##################
 
@@ -440,7 +444,9 @@ class Graphics:
         self.image[tuple(element.p+X+Y)] = COLORS[element.color]
 
     def history(self, t):
-        for element in self.race.players + self.race.lost_missiles:
+        for element in self.race.players + \
+                self.race.arrived_players + \
+                self.race.lost_missiles:
             for pos in element.history[:t]:
                 if len(pos) > 0:
                     pos = replace_tuple(pos)
@@ -491,6 +497,7 @@ class Race:
         self.t = 0
         self.n = n
         self.players = []
+        self.arrived_players = []
         self.missiles = []
         self.lost_missiles = []
         self.circuit = Circuit(shape, length, width)
@@ -509,7 +516,13 @@ class Race:
     def reset_pos(self):
         for player in self.players:
             player.reset_pos()
-    
+
+    def fill_history(self):
+        for element in self.players +\
+                self.arrived_players +\
+                self.lost_missiles:
+            element.fill_history()
+            
     def rec_pos(self):
         """
         records all positions
@@ -572,13 +585,11 @@ class Race:
             # win ?
             if self.circuit.win_check(pos):
                 element.win(pos)
-                arrived = True
                 break
             # advance
             element.p = np.array(pos, int)
 
     def turn(self):
-        win = False
         for player in self.players:
             if not player.play:
                 print '- - - - - - - - - - -\nplayer %i turn' \
@@ -593,24 +604,22 @@ class Race:
         for missile in self.missiles:
             self.move(missile)
         self.rec_pos()
+        # removing players who have won
         for player in self.players:
             if self.circuit.win_check(tuple(player.p) ):
-                win = True
+                player.end()
         self.graphics.draw()
         self.t += 1
-        return win
             
     def run(self):
         self.graphics.draw()
         tmp = raw_input('press RETURN to start, Q to quit ')
         if tmp == 'q':
             sys.exit()
-        running = True
-        while running:
-            running = not self.turn()
+        while len(self.arrived_players) < min(3, max(self.n-1, 1)):
+            self.turn()
+        self.fill_history()
         self.reset_pos()
-        for missile in self.lost_missiles:
-            missile.fill_history()
         while 1:
             tmp = raw_input('press Q to quit ')
             if tmp == 'q':
@@ -618,7 +627,7 @@ class Race:
             self.replay()
 
     def replay(self):
-        for i in xrange(len(self.players[0].history)+1):
+        for i in xrange(len(self.arrived_players[0].history)+1):
             self.graphics.draw(history = i)
 
 ############## main ##############
