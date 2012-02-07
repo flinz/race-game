@@ -24,17 +24,6 @@ X = np.array([1, 0], int)
 Y = np.array([0, 1], int)
 O = np.zeros(2, int)
 
-COLORS = [
-    (0.0, 0.0, 1.0),   # 'b'
-    (0.0, 0.5, 0.0),   # 'g'
-    (1.0, 0.0, 0.0),   # 'r'
-    (0.0, 0.75, 0.75), # 'c'
-    (0.75, 0, 0.75),   # 'm'
-    (0.75, 0.75, 0),   # 'y'
-    (0.0, 0.0, 0.0),   # 'k'
-    (1.0, 1.0, 1.0),   # 'w'
-    ]
-
 ############### general algorithms ######
 
 def find_path(position, velocity):
@@ -128,7 +117,7 @@ class Player(Element):
     def __init__(self, race, index, color,
                  position):
         Element.__init__(self, race, index, color,
-                         position, O.copy() )                         
+                         position, O.copy() )   
         self.play = 0
         self.missile = self.N_MISSILE
 
@@ -270,7 +259,8 @@ class Missile(Element):
             vx = np.random.rand()
             vy = np.random.rand()
             v = np.sqrt(vx**2+vy**2)
-        velocity = np.array([round(vx*self.V/v), round(vy*self.V/v)], int)
+        velocity = np.array([round(vx*self.V/v),
+                             round(vy*self.V/v)], int)
         Element.__init__(self, race, index, COLORS[6],
                          car_position.copy(), velocity)
 
@@ -325,7 +315,6 @@ CIRCUITS = {
 
 class Circuit:
 
-    SGM = 2.
     START_ZONE = -5.
 
     def __init__(self, shape, length, width):
@@ -335,12 +324,12 @@ class Circuit:
 
     def add_obstacles(self, density):
         self.obstacles = (
-            (np.random.rand(*self.circuit.shape)<density))
+            (np.random.rand(*self.circuit.shape)<density) )
 
-    def filter_obstacles(self, threshold, show = False):
-        obstacles = self.obstacles.copy().astype(int)
-        gauss = 1/np.sqrt(2*np.pi)/self.SGM
-        func = lambda x: np.exp(-0.5*x**2/self.SGM**2)*gauss
+    def filter_obstacles(self, threshold, sgm = 2., show = False):
+        obstacles = self.obstacles.copy().astype(float)
+        gauss = 1/np.sqrt(2*np.pi)/sgm
+        func = lambda x: np.exp(-0.5*x**2/sgm**2)*gauss
         # change zone !!!
         for pos in self.start:
             obstacles[pos] = self.START_ZONE
@@ -350,7 +339,8 @@ class Circuit:
         for x,y in it:
             coef = func(np.sqrt( (x-sx)**2 + (y-sy)**2) )
             if coef>1e-6:
-                mat[max(0,x-sx):min(x,sx), max(0,y-sy):min(y,sy)] += coef *\
+                mat[max(0,x-sx):min(x,sx),
+                    max(0,y-sy):min(y,sy)] += coef *\
                     obstacles[max(0,sx-x): min(2*sx-x,sx),
                               max(0,sy-y): min(2*sy-y,sy)]
         rand = np.random.rand(*mat.shape)
@@ -383,13 +373,27 @@ class Circuit:
 
 ############## graphics #################
 
+COLORS = {
+    'blue': (0.0, 0.0, 1.0),
+    'green': (0.0, 0.5, 0.0),
+    'red': (1.0, 0.0, 0.0),
+    'cyan': (0.0, 0.75, 0.75),
+    'magenta': (0.75, 0, 0.75),
+    'yellow': (0.75, 0.75, 0),
+    'black': (0.0, 0.0, 0.0),
+    'white': (1.0, 1.0, 1.0),
+    }
+
+def scale(color, k):
+    assert len(color) == 3, 'not a RGB color'
+    return k*color[0], k*color[1], k*color[2]
+
 class Graphics:
 
-    red = np.array([0.7, 0, 0])
+    red = scale(COLORS['red'], 0.7)
     yellow = (0.9, 0.8, 0)
-    unif = np.ones(3)
-    white = 0.8*unif
-    grey = 0.4*unif
+    white = scale(COLORS['white'], 0.8)
+    grey = scale(COLORS['white'], 0.4)
 
     def __init__(self, race, circuit):
         self.race = race
@@ -404,7 +408,7 @@ class Graphics:
         self.image[:, :] = self.grey
         cir = self.circuit
         self.image[1:-1, 1:-1][
-            cir.circuit - cir.obstacles] = self.white
+            cir.circuit*(-cir.obstacles)] = self.white
         
     def show(self):
         self.graph.set_data(self.image)
@@ -412,8 +416,8 @@ class Graphics:
         sleep(0.3)
 
     def frame(self, color):
-        self.image[ [0,-1] ] = color
-        self.image[:, [0,-1] ] = color
+        self.image[ [0,-1] ] = COLORS[color]
+        self.image[:, [0,-1] ] = COLORS[color]
 
     def explosion(self, pos, size):
         x, y = replace_tuple(pos)
@@ -427,14 +431,14 @@ class Graphics:
                 self.image[a, b] = self.yellow
 
     def place(self, element):
-        self.image[tuple(element.p+X+Y)] = element.color
+        self.image[tuple(element.p+X+Y)] = COLORS[element.color]
 
     def history(self, t):
         for element in self.race.players + self.race.lost_missiles:
             for pos in element.history[:t]:
                 if len(pos) > 0:
                     pos = replace_tuple(pos)
-                    self.image[pos] = element.color
+                    self.image[pos] = COLORS[element.color]
 
     def cross(self, positions):
         for pos in positions:
@@ -461,6 +465,17 @@ class Graphics:
         
 ############## race #####################
 
+COLOR_ORDER = [
+    'blue',
+    'green',
+    'red',
+    'cyan',
+    'magenta',
+    'yellow',
+    'black',
+    'white',
+    ]
+
 class Race:
 
     def __init__(self, n, shape, length, width):
@@ -476,7 +491,7 @@ class Race:
         starting_blocks = copy(self.circuit.start)
         np.random.shuffle(starting_blocks)
         for idx in xrange(n):
-            color = COLORS[idx]
+            color = COLOR_ORDER[idx]
             position = np.array(starting_blocks[idx], int)
             # color = np.random.rand(3)
             # while color.std()<0.1:
@@ -580,6 +595,10 @@ class Race:
         return win
             
     def run(self):
+        self.graphics.draw()
+        tmp = raw_input('press RETURN to start, Q to quit ')
+        if tmp == 'q':
+            sys.exit()
         running = True
         while running:
             running = not self.turn()
@@ -587,7 +606,7 @@ class Race:
         for missile in self.lost_missiles:
             missile.fill_history()
         while 1:
-            tmp = raw_input('for no replay, press "q"')
+            tmp = raw_input('press Q to quit ')
             if tmp == 'q':
                 sys.exit()
             self.replay()
@@ -599,17 +618,21 @@ class Race:
 ############## main ##############
 
 def usage():
-    print '-n # players'
+    print '\n-n # players'
     print '-r race name (straight, s_shape)'
     print '-l race length'
     print '-w race width'
     print '-o obstacles density'
+    print '-s filter sigma'
     print '-f filter threshold'
+    print '\n--help   prints this'
+    print '--filter automatic parameter set'
+    print '         density = 0.01, sigma = 1., threshold = 5.\n'
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hn:r:l:w:o:f:',
-                                   ['help'])
+        opts, args = getopt.getopt(sys.argv[1:], 'hn:r:l:w:o:f:s:',
+                                   ['help', 'filter'])
     except getopt.GetoptError, err:
         # print help information and exit:
         print str(err) # will print "option -a not recognized"
@@ -619,6 +642,7 @@ def main():
     length = 50
     width = 25
     density = 0
+    sigma = 0
     threshold = 0
     shape = 'straight'
     for o, a in opts:
@@ -635,16 +659,25 @@ def main():
             density = float(a)
         elif o == '-r':
             shape = a
+        elif o == '-s':
+            if not density: density = 0.01
+            if not threshold: threshold = 5.
+            sigma = float(a)
         elif o == '-f':
             if not density: density = 0.01
+            if not sigma: sigma = 1.
             threshold = float(a)
+        elif o == '--filter':
+            density = 0.01
+            sigma = 1.
+            threshold = 5.
         else:
             assert False, 'unhandled option'
     race = Race(n, shape, length, width)
     if density:
         race.circuit.add_obstacles(density)
-    if threshold:
-        race.circuit.filter_obstacles(threshold, True)
+    if threshold or sigma:
+        race.circuit.filter_obstacles(threshold, sigma) # , True)
     race.run()
 
 if __name__ == '__main__':
