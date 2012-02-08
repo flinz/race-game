@@ -81,6 +81,8 @@ class Element:
         self.v = velocity
         self.register(race)
         self.init_history()
+        self.avoid = False # !!!
+        self.play = 0
 
     def register(self, race):
         self.race = race
@@ -92,20 +94,28 @@ class Element:
         history.append(tuple(self.p) )
         self.history = history
 
+    def fill_history(self):
+        for _ in xrange(
+            self.race.t-len(self.history) ):
+            self.history.append( () )
+
     def rec_position(self):
         """
         records actual position
         """
         self.history.append(tuple(self.p) )
 
-    def fill_history(self):
-        for _ in xrange(
-            self.race.t-len(self.history) ):
-            self.history.append( () )
+    def turn(self):
+        pass
 
     def win(self, pos):
         self.p = np.array(pos, int)
+        self.end()
 
+    def end(self):
+        self.rec_position()
+        self.race.out(self)
+        
 ############### players #################
 
 class Player(Element):
@@ -120,14 +130,7 @@ class Player(Element):
                  position):
         Element.__init__(self, race, index, color,
                          position, O.copy() )   
-        self.play = 0
         self.missile = self.N_MISSILE
-
-    def reset_pos(self):
-        """
-        resets position
-        """
-        self.p = np.array(self.history[0], int)
 
     def turn(self):
         """
@@ -201,58 +204,42 @@ class Player(Element):
             np.random.rand()<0.5)
         return sign*direction
 
-    def hit_speed(self, player = None):
-        if player:
-            player.v = (self.V_IN*self.v +
-                        self.V_INTO*player.v).round()
+    def hit_speed(self):
         v = abs(self.v).sum()
         self.play = int(np.ceil(
                 -(1+v)+np.sqrt(1+2*v*(v+1) ) ) )
+        v_hit = self.v.copy()
         self.v = O.copy()
+        return v_hit
 
-    def hit(self, pos):
+    def hit(self, what):
         """
         hits wall or other element
         """
         print 'you crashed...'
-        walls = True
-        for player in self.race.players:
-            if player != self and tuple(player.p) == pos:
-                walls = False
-                # to self (and player.v)
-                self.hit_speed(player)
-                # graph
-                self.race.graphics.draw(
-                    explosion = (pos, self.play) )
-                # to player
-                self.race.move(player)
-                player.v = self.rand_dir()
-        for missile in self.race.missiles:
-            if tuple(missile.p) == pos:
-                walls = False
-                # to missile
-                missile.kill()
-                # graph
-                self.race.graphics.draw(
-                    explosion = (pos, missile.SIZE) )
-                # to self
-                self.p = np.array(pos, int)
-                self.v = self.rand_dir()
-        if walls:
-            # to self
-            self.hit_speed()
-            # graph
-            self.race.graphics.draw(
-                explosion = (pos, self.play) )
+        if what.__class__ == Player or what == 'wall':
+            v = abs(self.v).sum()
+            self.play = int(np.ceil(
+                    -(1+v)+np.sqrt(1+2*v*(v+1) ) ) )
+            self.v = O.copy()
+        elif what.__class__ == Missile:
+            self.be_hit(what)
+
+    def be_hit(self, element, v):
+        if element.__class__ == Player:
+            self.v = (self.V_IN*v +
+                      self.V_INTO*self.v).round()
+            self.race.move(self)
+        if element.__class__ == Missile:
+            pass
+        # if hasn't crashed
+        if not self.play:
+            self.v = self.rand_dir()
 
     def win(self, pos):
         Element.win(self, pos)
         print '\nyeah\n'
-
-    def end(self):
-        self.race.players.remove(self)
-        self.race.arrived_players.append(self)
-        
+        self.race.arrived_players += 1
 
 ############## missile ##################
 
@@ -274,31 +261,12 @@ class Missile(Element):
         Element.__init__(self, race, index, 'black',
                          car_position.copy(), velocity)
 
-    def hit(self, pos):
-        for player in self.race.players:
-            if pos == tuple(player.p):
-                # to player
-                player.v = player.rand_dir()
-        for missile in self.race.missiles:
-            if missile != self and\
-                    tuple(missile.p) == pos:
-                # to missile
-                missile.kill()
-        # to self
-        self.kill()
-        # graph
-        self.race.graphics.draw(
-            explosion = (pos, missile.SIZE) )
-    
-    def win(self, pos):
-        Element.win(self, pos)
-        self.kill()
+    def hit(self, what):
+        self.end()
 
-    def kill(self):
-        self.rec_position()
-        self.race.missiles.remove(self)
-        self.race.lost_missiles.append(self)
-
+    def be_hit(self, element, v):
+        self.end()
+        
 ############## circuit ##################
 
 def straight(length, width):
@@ -444,9 +412,7 @@ class Graphics:
         self.image[tuple(element.p+X+Y)] = COLORS[element.color]
 
     def history(self, t):
-        for element in self.race.players + \
-                self.race.arrived_players + \
-                self.race.lost_missiles:
+        for element in self.race.done:
             for pos in element.history[:t]:
                 if len(pos) > 0:
                     pos = replace_tuple(pos)
@@ -462,7 +428,7 @@ class Graphics:
     def draw(self, frame = None, cross = None, explosion = None,
              history = None):
         self.reset_image()
-        for element in self.race.players + self.race.missiles:
+        for element in self.race.playing:
             self.place(element)
         if frame:
             self.frame(frame)
@@ -496,10 +462,9 @@ class Race:
         """
         self.t = 0
         self.n = n
-        self.players = []
-        self.arrived_players = []
-        self.missiles = []
-        self.lost_missiles = []
+        self.playing = []
+        self.done = []
+        self.arrived_players = 0
         self.circuit = Circuit(shape, length, width)
         starting_blocks = copy(self.circuit.start)
         np.random.shuffle(starting_blocks)
@@ -509,65 +474,70 @@ class Race:
             # color = np.random.rand(3)
             # while color.std()<0.1:
             #     color = np.random.rand(3)
-            self.players.append(
+            self.playing.append(
                 Player(self, idx, color, position) )
         self.graphics = Graphics(self, self.circuit)
 
-    def reset_pos(self):
-        for player in self.players:
-            player.reset_pos()
+    def out(self, element):
+        try:
+            self.playing.remove(element)
+        except ValueError, err:
+            pass
+        if element not in self.done:
+            self.done.append(element)
+
+    def close(self):
+        for element in self.playing:
+            self.out(element)
+        self.fill_history()
 
     def fill_history(self):
-        for element in self.players +\
-                self.arrived_players +\
-                self.lost_missiles:
+        for element in self.done:
             element.fill_history()
             
     def rec_pos(self):
         """
         records all positions
         """
-        for player in self.players:
-            player.rec_position()
-        for missile in self.missiles:
-            missile.rec_position()
+        for element in self.playing:
+            element.rec_position()
 
     def add_missile(self, player):
-        idx = len(self.missiles)
-        self.missiles.append(
-            Missile(self, idx, player.p,
-                    player.v) )
-        self.move(self.missiles[-1] )
+        idx = len(self.playing)
+        missile = Missile(self, idx, player.p,
+                          player.v)
+        self.playing.insert(
+            self.playing.index(player),
+            missile)
+        self.move(missile)
             
     def available(self, element, pos):
-        ok = self.circuit.available(pos)
-        for player in self.players:
-            if player != element and\
-                    tuple(player.p) == pos:
-                ok = False
-        for missile in self.missiles:
-            if missile != element and\
-                    tuple(missile.p) == pos:
-                ok = False
-        return ok
+        on_the_way = None
+        if not self.circuit.available(pos):
+            on_the_way = 'wall'
+        for check in self.playing:
+            if check != element and\
+                    tuple(check.p) == pos:
+                on_the_way = check
+        return on_the_way
 
     def move(self, element):
         """
         one move for 'element'
         """
         path = find_path(element.p, element.v)
-        arrived = False
         for pos in path:
             prev_pos = tuple(element.p)
             # skip a corner
             stop = False
             if manhattan_dist(pos, prev_pos) > 1:
                 ways = insert(pos, prev_pos)
-                if not (
-                    self.available(element, ways[0]) or\
-                        self.available(element, ways[1]) ):
+                ways = [(way, self.available(element, way) )
+                        for way in ways]
+                # both blocked
+                if ways[0][1] and ways[1][1]:
                     np.random.shuffle(ways)
-                    element.hit(ways[0])
+                    self.hit(element, *ways[0])
                     stop = True
                     break
                 else:
@@ -578,9 +548,9 @@ class Race:
                             break
             if stop: break
             # hit
-            if not self.available(element, pos):
-                element.hit(pos)
-                arrived = True
+            on_the_way = self.available(element, pos)
+            if on_the_way:
+                self.hit(element, pos, on_the_way)
                 break
             # win ?
             if self.circuit.win_check(pos):
@@ -589,25 +559,39 @@ class Race:
             # advance
             element.p = np.array(pos, int)
 
+    def hit(self, element, pos, what):
+        """
+        hits wall or other element
+        """
+        # to element
+        v = element.v.copy()
+        element.hit(what)
+        # graph
+        if what.__class__ == Missile or\
+                element.__class__ == Missile:
+            size = Missile.SIZE
+        else:
+            size = element.play
+        self.graphics.draw(
+            explosion = (pos, size) )
+        # to what
+        if what != 'wall':
+            what.be_hit(element, v)
+
     def turn(self):
-        for player in self.players:
-            if not player.play:
-                print '- - - - - - - - - - -\nplayer %i turn' \
-                    %player.id
-                player.turn()
+        for element in self.playing:
+            if not element.play:
+                print '- - - - - - - - - - -'
+                print 'player (missile) %i turn' \
+                    %element.id
+                element.turn()
             else:
                 print '- - - - - - - - - - -'
                 print 'player %i misses %i turn' \
-                    %(player.id, player.play)
-                player.play -= 1
-            self.move(player)
-        for missile in self.missiles:
-            self.move(missile)
+                    %(element.id, element.play)
+                element.play -= 1
+            self.move(element)
         self.rec_pos()
-        # removing players who have won
-        for player in self.players:
-            if self.circuit.win_check(tuple(player.p) ):
-                player.end()
         self.graphics.draw()
         self.t += 1
             
@@ -616,10 +600,9 @@ class Race:
         tmp = raw_input('press RETURN to start, Q to quit ')
         if tmp == 'q':
             sys.exit()
-        while len(self.arrived_players) < min(3, max(self.n-1, 1)):
+        while self.arrived_players < min(3, max(self.n-1, 1)):
             self.turn()
-        self.fill_history()
-        self.reset_pos()
+        self.close()
         while 1:
             tmp = raw_input('press Q to quit ')
             if tmp == 'q':
@@ -627,7 +610,7 @@ class Race:
             self.replay()
 
     def replay(self):
-        for i in xrange(len(self.arrived_players[0].history)+1):
+        for i in xrange(len(self.done[0].history)+1):
             self.graphics.draw(history = i)
 
 ############## main ##############
