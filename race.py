@@ -77,7 +77,7 @@ class Element:
         self.v = velocity
         self.register(race)
         self.init_history()
-        self.avoid = False # !!!
+        self.avoid = False
         self.play = 0
 
     def register(self, race):
@@ -127,6 +127,7 @@ class Player(Element):
         Element.__init__(self, race, index, color,
                          position, O.copy() )   
         self.missile = self.N_MISSILE
+        self.avoid = True
 
     def turn(self):
         """
@@ -525,25 +526,10 @@ class Race:
         path = find_path(element.p, element.v)
         for pos in path:
             prev_pos = tuple(element.p)
-            # skip a corner
-            stop = False
-            if manhattan_dist(pos, prev_pos) > 1:
-                ways = insert(pos, prev_pos)
-                ways = [(way, self.available(element, way) )
-                        for way in ways]
-                # both blocked
-                if ways[0][1] and ways[1][1]:
-                    np.random.shuffle(ways)
-                    self.hit(element, *ways[0])
-                    stop = True
-                    break
-                else:
-                    for way in ways:
-                        if self.circuit.win_check(way):
-                            element.win(way)
-                            stop = True
-                            break
-            if stop: break
+            # at a corner
+            if manhattan_dist(pos, prev_pos) > 1 and\
+                    self.corner(element, pos, prev_pos):
+                break
             # hit
             on_the_way = self.available(element, pos)
             if on_the_way:
@@ -555,6 +541,35 @@ class Race:
                 break
             # advance
             element.p = np.array(pos, int)
+
+    def corner(self, element, pos, prev_pos):
+        ways = insert(pos, prev_pos)
+        ways = [(way, self.available(element, way) )
+                for way in ways]
+        np.random.shuffle(ways)
+        hit = False
+        # both blocked for driver
+        if element.avoid and ways[0][1] and ways[1][1]:
+            hit = True
+            where, what = ways[0]
+        # 1st blocked for missile
+        elif (not element.avoid) and ways[0][1]:
+            hit = True
+            where, what = ways[0]
+        # 2nd blocked for missile
+        elif (not element.avoid) and ways[1][1]:
+            hit = True
+            where, what = ways[1]
+        # hit (if any of the three above)
+        if hit:
+            self.hit(element, where, what)
+            return True
+        # win check in any of the two
+        for way, _ in ways:
+            if self.circuit.win_check(way):
+                element.win(way)
+                return True
+        return False
 
     def hit(self, element, pos, what):
         """
