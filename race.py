@@ -1,7 +1,3 @@
-# remove np.arrays -> design tools for adding tuples
-# new classes: image
-# move functions where they belong
-
 import numpy as np
 import getopt, sys
 from time import sleep, time
@@ -141,6 +137,7 @@ class Player(Element):
         if (time()-t) > self.PLAY_TIME:
             dv = self.jitter()
         if missile and self.missile > 0:
+            self.play = 1
             self.race.add_missile(self)
             self.missile -= 1
         self.v += dv
@@ -585,12 +582,12 @@ class Race:
                 print 'player (missile) %i turn' \
                     %element.id
                 element.turn()
+                self.move(element)
             else:
                 print '- - - - - - - - - - -'
                 print 'player %i misses %i turn' \
                     %(element.id, element.play)
                 element.play -= 1
-            self.move(element)
         self.rec_pos()
         self.graphics.draw()
         self.t += 1
