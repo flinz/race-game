@@ -291,9 +291,19 @@ CIRCUITS = {
 
 class Circuit:
 
-    START_ZONE = -5.
+    start_zone = -5.
+    opening = '# circuit format copyright Ziegler 2012\n'
 
-    def __init__(self, shape, length, width):
+    def __init__(self, shape, length, width, name):
+        self.shape = shape
+        self.length = length
+        self.width = width
+        if name:
+            self.read(name)
+        else:
+            self.create_circuit(shape, length, width)
+
+    def create_circuit(self, shape, length, width):
         self.circuit, self.start, self.end = \
             CIRCUITS[shape](length, width)
         self.obstacles = np.zeros(self.circuit.shape, bool)
@@ -308,7 +318,7 @@ class Circuit:
         func = lambda x: np.exp(-0.5*x**2/sgm**2)*gauss
         # change zone !!!
         for pos in self.start:
-            obstacles[pos] = self.START_ZONE
+            obstacles[pos] = self.start_zone
         sx, sy = self.circuit.shape
         mat = np.zeros( (sx, sy), float)
         it = product(xrange(2*sx), xrange(2*sy))
@@ -346,6 +356,38 @@ class Circuit:
 
     def win_check(self, pos):
         return (pos in self.end)
+
+    def write(self, name):
+        print 'writing...'
+        f = open(name + '.cir', 'w')
+        f.writelines([self.opening,
+                      self.shape + ' %i %i\n'%(self.length, self.width)])
+        sx, sy = self.obstacles.shape
+        it = product(xrange(sx), xrange(sy))
+        for x,y in it:
+            if self.obstacles[x, y]:
+                f.write('%i %i\n'%(x, y))
+        f.close()
+        print 'done'
+
+    def read(self, name):
+        name += '.cir'
+        print 'opening', name, '...'
+        f = open(name, 'r')
+        assert f.readline() == self.opening, 'wrong format'
+        line = f.readline()
+        line = line.split(' ')
+        self.shape = line[0]
+        self.length = int(line[1])
+        self.width = int(line[2])
+        self.create_circuit(self.shape, self.length, self.width)
+        for line in f:
+            line = line.split(' ')
+            self.obstacles[line[0], line[1]] = True
+        f.close()
+        print 'closed'
+
+
 
 ############## graphics #################
 
@@ -454,7 +496,7 @@ COLOR_ORDER = [
 
 class Race:
 
-    def __init__(self, n, shape, length, width):
+    def __init__(self, n, shape, length, width, name):
         """
         n: # players
         """
@@ -463,7 +505,7 @@ class Race:
         self.playing = []
         self.done = []
         self.arrived_players = 0
-        self.circuit = Circuit(shape, length, width)
+        self.circuit = Circuit(shape, length, width, name)
         starting_blocks = copy(self.circuit.start)
         np.random.shuffle(starting_blocks)
         for idx in xrange(n):
@@ -616,8 +658,12 @@ class Race:
             self.turn()
         self.close()
         while 1:
-            tmp = raw_input('press Q to quit ')
-            if tmp == 'q':
+            tmp = raw_input('press Q to quit, S to save circuit ')
+            if len(tmp) and tmp in 'Qq':
+                sys.exit()
+            if len(tmp) and tmp in 'Ss':
+                name = raw_input('\nname ? ')
+                self.circuit.write(name)
                 sys.exit()
             self.replay()
 
@@ -629,7 +675,8 @@ class Race:
 
 def usage():
     print '\n-n # players'
-    print '-r race name (straight, s_shape)'
+    print '-c circuit file name to load'
+    print '-r race type (straight, s_shape)'
     print '-l race length'
     print '-w race width'
     print '-o obstacles density'
@@ -641,7 +688,7 @@ def usage():
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hn:r:l:w:o:f:s:',
+        opts, args = getopt.getopt(sys.argv[1:], 'hc:n:r:l:w:o:f:s:',
                                    ['help', 'filter'])
     except getopt.GetoptError, err:
         # print help information and exit:
@@ -655,6 +702,7 @@ def main():
     sigma = 0
     threshold = 0
     shape = 'straight'
+    name = None
     for o, a in opts:
         if o == '-n':
             n = int(a)
@@ -677,13 +725,15 @@ def main():
             if not density: density = 0.01
             if not sigma: sigma = 1.
             threshold = float(a)
+        elif o == '-c':
+            name = a
         elif o == '--filter':
             density = 0.01
             sigma = 1.
             threshold = 5.
         else:
             assert False, 'unhandled option'
-    race = Race(n, shape, length, width)
+    race = Race(n, shape, length, width, name)
     if density:
         race.circuit.add_obstacles(density)
     if threshold or sigma:
