@@ -139,7 +139,6 @@ class Player(Element):
         if (time()-t) > self.play_time:
             dv = self.jitter()
         if missile and self.missile > 0:
-            self.play = 1
             self.race.add_missile(self)
             self.missile -= 1
         self.v += dv
@@ -314,6 +313,10 @@ class Missile(Element):
 
     def be_hit(self, element, v):
         self.end()
+
+    def end(self):
+        Element.end(self)
+        self.race.i -= 1
         
 ############## circuit ##################
 
@@ -611,6 +614,7 @@ class Race:
             element.rec_position()
 
     def add_missile(self, player):
+        self.i += 1
         idx = len(self.playing)
         missile = Missile(self, idx, player.p,
                           player.v)
@@ -710,7 +714,9 @@ class Race:
     def turn(self):
         self.t += 1
         print 'turn %i'%self.t
-        for element in self.playing:
+        self.i = 0
+        while self.i < len(self.playing):
+            element = self.playing[self.i]
             if not element.play:
                 print '- - - - - - - - - - -'
                 print 'player (missile) %i turn' \
@@ -722,6 +728,7 @@ class Race:
                 print 'player %i misses %i turn' \
                     %(element.id, element.play)
                 element.play -= 1
+            self.i += 1
         for ghost in self.ghosts:
             ghost.turn()
         self.rec_pos()
@@ -775,8 +782,8 @@ def main():
         usage()
         sys.exit(2)
     n = 2
-    length = 50
-    width = 25
+    length = 20
+    width = 20
     density = 0
     sigma = 0
     threshold = 0
