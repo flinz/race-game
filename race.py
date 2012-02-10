@@ -116,17 +116,18 @@ class Element:
 
 class Player(Element):
 
-    N_MISSILE = 10
-    PLAY_TIME = 10
-    P_JITTER = 0.05
-    V_IN = 0.5
-    V_INTO = 0.5
+    missile = 10
+    play_time = 10
+    p_jitter = 0.05
+    v_in = 0.5
+    v_into = 0.5
+    opening = '# ghost format copyright Ziegler 2012\n'
 
     def __init__(self, race, index, color,
                  position):
         Element.__init__(self, race, index, color,
                          position, O.copy() )   
-        self.missile = self.N_MISSILE
+        self.missile = self.missile
         self.avoid = True
 
     def turn(self):
@@ -135,7 +136,7 @@ class Player(Element):
         """
         t = time()
         dv, missile = self.next_move()
-        if (time()-t) > self.PLAY_TIME:
+        if (time()-t) > self.play_time:
             dv = self.jitter()
         if missile and self.missile > 0:
             self.play = 1
@@ -185,9 +186,9 @@ class Player(Element):
     def jitter(self):
         """
         returns random direction with
-        probability P_JITTER (else 0)
+        probability p_jitter (else 0)
         """
-        if np.random.rand() < 1-self.P_JITTER:
+        if np.random.rand() < 1-self.p_jitter:
             direction = O.copy()
         else:
             direction = self.rand_dir()
@@ -225,8 +226,8 @@ class Player(Element):
 
     def be_hit(self, element, v):
         if element.__class__ == Player:
-            self.v = (self.V_IN*v +
-                      self.V_INTO*self.v).round()
+            self.v = (self.v_in*v +
+                      self.v_into*self.v).round()
             self.race.move(self)
         if element.__class__ == Missile:
             pass
@@ -236,8 +237,57 @@ class Player(Element):
 
     def win(self, pos):
         Element.win(self, pos)
-        print '\nyeah\n'
+        save = raw_input('\nsave ghost [y/N]? ')
+        if save == 'y':
+            name = raw_input('name? ')
+            self.write(name)
         self.race.arrived_players += 1
+
+    def write(self, name):
+        print 'writing...'
+        f = open(name + '.ghs', 'w')
+        f.write(self.opening)
+        for pos in self.history:
+            if len(pos):
+                f.write('%i %i\n'%pos)
+        f.close()
+        print 'done'
+
+############### ghosts #################
+
+class Ghost(Element):
+
+    opening = '# ghost format copyright Ziegler 2012\n'
+
+    def __init__(self, race, index, color, name):
+        Element.__init__(self, race, index, color,
+                         O.copy(), O.copy() )   
+        self.read(name)
+        self.init_pos()
+
+    def init_pos(self):
+        self.p = np.array(self.history[0])
+
+    def turn(self):
+        """
+        one turn
+        """
+        try:
+            self.p = np.array(self.history[self.race.t])
+        except IndexError, err:
+            pass
+
+    def read(self, name):
+        self.history.pop()
+        name += '.ghs'
+        print 'opening', name, '...'
+        f = open(name, 'r')
+        assert f.readline() == self.opening, 'wrong format'
+        for line in f:
+            line = line.split(' ')
+            self.history.append( (int(line[0]), int(line[1]) ) )
+        f.close()
+        print 'closed'
 
 ############## missile ##################
 
@@ -400,6 +450,12 @@ COLORS = {
     'yellow': (0.75, 0.75, 0),
     'black': (0.0, 0.0, 0.0),
     'white': (1.0, 1.0, 1.0),
+    'light_blue': (0.6, 0.6, 0.8),
+    'light_green': (0.6, 0.7, 0.6),
+    'light_red': (0.8, 0.6, 0.6),
+    'light_cyan': (0.6, 0.7, 0.7),
+    'light_magenta': (0.7, 0.6, 0.7),
+    'light_yellow': (0.7, 0.7, 0.6)
     }
 
 def scale(color, k):
@@ -452,7 +508,7 @@ class Graphics:
         self.image[tuple(element.p+X+Y)] = COLORS[element.color]
 
     def history(self, t):
-        for element in self.race.done:
+        for element in self.race.done + self.race.ghosts:
             for pos in element.history[:t]:
                 if len(pos) > 0:
                     pos = replace_tuple(pos)
@@ -468,7 +524,7 @@ class Graphics:
     def draw(self, frame = None, cross = None, explosion = None,
              history = None):
         self.reset_image()
-        for element in self.race.playing:
+        for element in self.race.playing + self.race.ghosts:
             self.place(element)
         if frame:
             self.frame(frame)
@@ -491,7 +547,16 @@ COLOR_ORDER = [
     'magenta',
     'yellow',
     'black',
-    'white',
+    'white'
+    ]
+
+COLOR_GHOST = [
+    'light_blue',
+    'light_green',
+    'light_red',
+    'light_cyan',
+    'light_magenta',
+    'light_yellow'
     ]
 
 class Race:
@@ -505,6 +570,7 @@ class Race:
         self.playing = []
         self.done = []
         self.arrived_players = 0
+        self.ghosts = []
         self.circuit = Circuit(shape, length, width, name)
         starting_blocks = copy(self.circuit.start)
         np.random.shuffle(starting_blocks)
@@ -529,10 +595,12 @@ class Race:
     def close(self):
         for element in self.playing:
             self.out(element)
+        for ghost in self.ghosts:
+            ghost.init_pos()
         self.fill_history()
 
     def fill_history(self):
-        for element in self.done:
+        for element in self.done + self.ghosts:
             element.fill_history()
             
     def rec_pos(self):
@@ -550,6 +618,13 @@ class Race:
             self.playing.index(player),
             missile)
         self.move(missile)
+
+    def add_ghost(self, name):
+        idx = len(self.ghosts)
+        ghost = Ghost(self, idx,
+                      COLOR_GHOST[idx],
+                      name)
+        self.ghosts.append(ghost)
             
     def available(self, element, pos):
         on_the_way = None
@@ -633,6 +708,8 @@ class Race:
             what.be_hit(element, v)
 
     def turn(self):
+        self.t += 1
+        print 'turn %i'%self.t
         for element in self.playing:
             if not element.play:
                 print '- - - - - - - - - - -'
@@ -645,9 +722,10 @@ class Race:
                 print 'player %i misses %i turn' \
                     %(element.id, element.play)
                 element.play -= 1
+        for ghost in self.ghosts:
+            ghost.turn()
         self.rec_pos()
         self.graphics.draw()
-        self.t += 1
             
     def run(self):
         self.graphics.draw()
@@ -682,13 +760,14 @@ def usage():
     print '-o obstacles density'
     print '-s filter sigma'
     print '-f filter threshold'
+    print '-g ghost names (separate with coma)'
     print '\n--help   prints this'
     print '--filter automatic parameter set'
     print '         density = 0.01, sigma = 1., threshold = 5.\n'
 
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], 'hc:n:r:l:w:o:f:s:',
+        opts, args = getopt.getopt(sys.argv[1:], 'hc:n:r:l:w:o:f:s:g:',
                                    ['help', 'filter'])
     except getopt.GetoptError, err:
         # print help information and exit:
@@ -703,6 +782,7 @@ def main():
     threshold = 0
     shape = 'straight'
     name = None
+    ghosts = []
     for o, a in opts:
         if o == '-n':
             n = int(a)
@@ -725,6 +805,8 @@ def main():
             if not density: density = 0.01
             if not sigma: sigma = 1.
             threshold = float(a)
+        elif o == '-g':
+            ghosts = a.split(',')
         elif o == '-c':
             name = a
         elif o == '--filter':
@@ -734,6 +816,8 @@ def main():
         else:
             assert False, 'unhandled option'
     race = Race(n, shape, length, width, name)
+    for name in ghosts:
+        race.add_ghost(name)
     if density:
         race.circuit.add_obstacles(density)
     if threshold or sigma:
