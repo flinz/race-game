@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from time import sleep, time
 from geometry import X, Y, O
@@ -14,6 +15,8 @@ MISSILE = 'm'
 
 class Element:
 
+    gh_opening = '# ghost format copyright Ziegler 2012\n'
+
     def __init__(self, race, color,
                  position, velocity):
         self.color = color
@@ -23,6 +26,13 @@ class Element:
         self.init_history()
         self.avoid = False
         self.play = 0
+
+    def init_pv(self, position):
+        self.p = np.array(position)
+        self.v = O.copy()
+
+    def init_color(self, color):
+        self.color = color
 
     def register(self, race):
         self.race = race
@@ -46,7 +56,15 @@ class Element:
         self.history.append(tuple(self.p) )
 
     def turn(self):
-        pass
+        if self.race.display:
+            print '- - - - - - - - - - -'
+        if self.play:
+            if self.race.display:
+                print 'you miss %i turn'%self.play
+            self.play -= 1
+            return False
+        else:
+            return True
 
     def win(self, pos):
         self.p = np.array(pos, int)
@@ -56,6 +74,16 @@ class Element:
         self.rec_position()
         self.race.out(self)
 
+    def write(self, name):
+        print 'writing ghost '+name
+        f = open(name + '.ghs', 'w')
+        f.write(self.gh_opening)
+        for pos in self.history:
+            if len(pos):
+                f.write('%i %i\n'%pos)
+        f.close()
+        print 'done'
+
 ############# Car #####################
 
 class Car(Element):
@@ -63,10 +91,9 @@ class Car(Element):
     v_in = 0.5
     v_into = 0.5
 
-    def __init__(self, race, color,
-                 position):
-        Element.__init__(self, race, color,
-                         position, O.copy() )   
+    def __init__(self, race):
+        Element.__init__(self, race, 'white',
+                         O.copy(), O.copy() )   
         self.avoid = True
 
     def hit_speed(self):
@@ -81,7 +108,8 @@ class Car(Element):
         """
         hits wall or other element
         """
-        print 'you crashed...'
+        if self.race.display:
+            print 'you crashed...'
         if what.__class__ == Player or what == 'wall':
             v = abs(self.v).sum()
             self.play = int(np.ceil(
@@ -121,26 +149,29 @@ class Player(Car):
     missile = 10
     play_time = 10
     p_jitter = 0.05
-    opening = '# ghost format copyright Ziegler 2012\n'
 
-    def __init__(self, race, color,
-                 position):
-        Car.__init__(self, race, color,
-                         position)   
+    def __init__(self, race):
+        Car.__init__(self, race)   
         self.missile = self.missile
 
     def turn(self):
-        """
-        one turn
-        """
-        t = time()
-        dv, missile = self.next_move()
-        if (time()-t) > self.play_time:
-            dv = self.jitter()
-        if missile and self.missile > 0:
-            self.race.add_missile(self)
-            self.missile -= 1
-        self.v += dv
+        if self.race.display:
+            print '- - - - - - - - - - -'
+        if self.play:
+            if self.race.display:
+                print 'you miss %i turn'%self.play
+            self.play -= 1
+            return False
+        else:
+            t = time()
+            dv, missile = self.next_move()
+            if (time()-t) > self.play_time:
+                dv = self.jitter()
+            if missile and self.missile > 0:
+                self.race.add_missile(self)
+                self.missile -= 1
+            self.v += dv
+            return True
 
     def next_pos(self):
         """
@@ -194,20 +225,11 @@ class Player(Car):
 
     def win(self, pos):
         Car.win(self, pos)
-        save = raw_input('\nsave ghost [y/N]? ')
-        if save == 'y':
-            name = raw_input('name? ')
-            self.write(name)
-
-    def write(self, name):
-        print 'writing...'
-        f = open(name + '.ghs', 'w')
-        f.write(self.opening)
-        for pos in self.history:
-            if len(pos):
-                f.write('%i %i\n'%pos)
-        f.close()
-        print 'done'
+        if self.race.display:
+            save = raw_input('\nsave ghost [y/N]? ')
+            if save == 'y':
+                name = raw_input('name ? ')
+                self.write(name)
 
 ############### ghosts #################
 
@@ -219,26 +241,32 @@ class Ghost(Element):
         Element.__init__(self, race, color,
                          O.copy(), O.copy() )   
         self.read(name)
-        self.init_pos()
+        self.init_pv()
 
-    def init_pos(self):
+    def init_pv(self, *args):
         self.p = np.array(self.history[0])
 
     def turn(self):
-        """
-        one turn
-        """
-        try:
-            self.p = np.array(self.history[self.race.t])
-        except IndexError, err:
-            pass
+        if self.race.display:        
+            print '- - - - - - - - - - -'
+        if self.play:
+            if self.race.display:
+                print 'you miss %i turn'%self.play
+            self.play -= 1
+            return False
+        else:
+            try:
+                self.p = np.array(self.history[self.race.t])
+            except IndexError, err:
+                pass
+            return True
 
     def read(self, name):
         self.history.pop()
         name += '.ghs'
         print 'opening', name, '...'
         f = open(name, 'r')
-        assert f.readline() == self.opening, 'wrong format'
+        assert f.readline() == self.gh_opening, 'wrong format'
         for line in f:
             line = line.split(' ')
             self.history.append( (int(line[0]), int(line[1]) ) )

@@ -11,19 +11,20 @@ def straight(length, width):
     return (race, start, end)
 
 def s_shape(length, width):
-    race = np.zeros((length+2*width,5*width), bool)
-    race[:,0:width] = True
-    race[:,2*width:3*width] = True
-    race[:,4*width:5*width] = True
-    race[-width:,width:2*width] = True
-    race[:width,3*width:4*width] = True
+    race = np.zeros((length+2*width,2*length+3*width), bool)
+    race[:,:width] = True
+    race[:,length+width:length+2*width] = True
+    race[:,2*length+2*width:] = True
+    race[:width,length+2*width:2*length+2*width] = True
+    race[-width:,width:length+width] = True
     start = [(0,i) for i in range(0,width)]
-    end = [(length+2*width-1,i) for i in range(4*width,5*width)]
+    end = [(length+2*width-1,i) for i in
+           range(2*length+2*width,2*length+3*width)]
     return (race, start, end)
 
 CIRCUITS = {
     'straight': straight,
-    's_shape': s_shape
+    's': s_shape
     }
 
 class Circuit:
@@ -31,14 +32,14 @@ class Circuit:
     start_zone = -5.
     opening = '# circuit format copyright Ziegler 2012\n'
 
-    def __init__(self, shape, length, width, name):
-        self.shape = shape
-        self.length = length
-        self.width = width
-        if name:
-            self.read(name)
-        else:
+    def __init__(self, shape, length, width):
+        if shape in CIRCUITS:
+            self.shape = shape
+            self.length = length
+            self.width = width
             self.create_circuit(shape, length, width)
+        else:
+            self.read(shape)
 
     def create_circuit(self, shape, length, width):
         self.circuit, self.start, self.end = \

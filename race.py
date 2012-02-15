@@ -7,7 +7,7 @@ from circuit import Circuit
 from graphics import Graphics
 from geometry import *
 
-from lorric_agent import RandDriver
+from lorric_agent import RandDriver, NNDriver
 
 ############## race #####################
 
@@ -33,35 +33,41 @@ COLOR_GHOST = [
 
 class Race:
 
-    def __init__(self, n, ais, shape, length, width, name):
+    def __init__(self, n, shape, length, width,
+                 display = True):
         """
         n: # players
         """
         self.t = 0
-        self.n = n + len(ais)
+        self.n = n
         self.playing = []
         self.done = []
-        self.arrived_players = 0
         self.ghosts = []
-        self.circuit = Circuit(shape, length, width, name)
+        self.circuit = Circuit(shape, length, width)
+        for idx in xrange(n):
+            self.add_player()
+        self.display = display
+        if display:
+            self.graphics = Graphics(self, self.circuit)
+
+    def init(self):
+        self.t = 0
+        self.arrived_players = 0
+        self.playing += self.done
+        self.done = []
+        self.init_pv()
+
+    def init_pv(self):
         starting_blocks = copy(self.circuit.start)
         np.random.shuffle(starting_blocks)
-        for idx in xrange(n):
-            color = COLOR_ORDER[idx]
-            position = np.array(starting_blocks[idx], int)
-            # color = np.random.rand(3)
-            # while color.std()<0.1:
-            #     color = np.random.rand(3)
-            self.playing.append(
-                Player(self, color, position) )
-        idx = n
-        for ai in ais:
-            color = COLOR_ORDER[idx]
-            position = np.array(starting_blocks[idx], int)
-            self.playing.append(
-                ai(self, color, position) )
-            idx += 1
-        self.graphics = Graphics(self, self.circuit)
+        for i in range(len(self.playing) ):
+            element = self.playing[i]
+            element.init_pv(starting_blocks[i])
+
+    def init_color(self):
+        for i in range(len(self.playing) ):
+            element = self.playing[i]
+            element.init_color(COLOR_ORDER[i])
 
     def out(self, element):
         try:
@@ -73,9 +79,9 @@ class Race:
 
     def close(self):
         for element in self.playing:
-            self.out(element)
+            element.end()
         for ghost in self.ghosts:
-            ghost.init_pos()
+            ghost.init_pv()
         self.fill_history()
 
     def fill_history(self):
@@ -101,10 +107,15 @@ class Race:
 
     def add_ghost(self, name):
         idx = len(self.ghosts)
-        ghost = Ghost(self, idx,
-                      COLOR_GHOST[idx],
+        ghost = Ghost(self, COLOR_GHOST[idx],
                       name)
         self.ghosts.append(ghost)
+
+    def add_ai(self, ai):
+        self.playing.append(ai)
+
+    def add_player(self):
+        self.playing.append(Player(self) )
 
     def available(self, element, pos):
         on_the_way = None
@@ -176,54 +187,62 @@ class Race:
         v = element.v.copy()
         element.hit(what)
         # graph
-        if what.__class__ == Missile or\
-                element.__class__ == Missile:
-            size = Missile.SIZE
-        else:
-            size = element.play
-        self.graphics.draw(
-            explosion = (pos, size) )
+        if self.display:
+            if what.__class__ == Missile or\
+                    element.__class__ == Missile:
+                size = Missile.SIZE
+            else:
+                size = element.play
+            self.graphics.draw(
+                explosion = (pos, size) )
         # to what
         if what != 'wall':
             what.be_hit(element, v)
 
     def turn(self):
         self.t += 1
-        print 'turn %i'%self.t
+        if self.display:
+            print 'turn %i'%self.t
         self.i = 0
         while self.i < len(self.playing):
             element = self.playing[self.i]
-            if not element.play:
-                print '- - - - - - - - - - -'
-                element.turn()
+            if element.turn():
                 self.move(element)
-            else:
-                print '- - - - - - - - - - -'
-                print 'you miss %i turn'%element.play
-                element.play -= 1
             self.i += 1
         for ghost in self.ghosts:
             ghost.turn()
         self.rec_pos()
-        self.graphics.draw()
+        if self.display:
+            self.graphics.draw()
             
     def run(self):
-        self.graphics.draw()
-        tmp = raw_input('press RETURN to start, Q to quit ')
-        if tmp == 'q':
-            sys.exit()
+        self.init()
+        if self.display:
+            self.init_color()
+            self.graphics.draw()
+            tmp = raw_input('press RETURN to start, Q to quit ')
+            if tmp == 'q':
+                sys.exit()
         while self.arrived_players < min(3, max(self.n-1, 1)):
             self.turn()
         self.close()
+
+    def ask(self):
         while 1:
-            tmp = raw_input('press Q to quit, S to save circuit ')
+            tmp = raw_input('R for replay, '+
+                            'M for one more (just one..), '+
+                            'Q to quit, '+
+                            'S to save circuit ')
+            if len(tmp) and tmp in 'Rr':
+                self.replay()
+            if len(tmp) and tmp in 'Mm':
+                self.run()
             if len(tmp) and tmp in 'Qq':
                 sys.exit()
             if len(tmp) and tmp in 'Ss':
                 name = raw_input('\nname ? ')
                 self.circuit.write(name)
                 sys.exit()
-            self.replay()
 
     def replay(self):
         for i in xrange(len(self.done[0].history)+1):
@@ -256,15 +275,14 @@ def main():
         usage()
         sys.exit(2)
     n = 2
-    length = 20
-    width = 20
+    length = 15
+    width = 15
     density = 0
     sigma = 0
     threshold = 0
-    shape = 'straight'
-    name = None
+    shape = 's'
     ghosts = []
-    ais = []
+    ais = False
     for o, a in opts:
         if o == '-n':
             n = int(a)
@@ -290,31 +308,34 @@ def main():
         elif o == '-g':
             ghosts = a.split(',')
         elif o == '-a':
-            ais = add_ai()
+            ais = True
         elif o == '-c':
-            name = a
+            shape = a
         elif o == '--filter':
             density = 0.01
             sigma = 1.
             threshold = 5.
         else:
             assert False, 'unhandled option'
-    race = Race(n, ais, shape, length, width, name)
+    race = Race(n, shape, length, width)
     for name in ghosts:
         race.add_ghost(name)
+    if ais:
+        add_ai(race)
     if density:
         race.circuit.add_obstacles(density)
     if threshold or sigma:
         race.circuit.filter_obstacles(threshold, sigma) # , True)
     race.run()
+    race.ask()
 
-def add_ai():
+def add_ai(race):
     n = raw_input('\nHow many ai ? ')
-    ais = []
     for _ in xrange(int(n) ):
-        ai_class = raw_input('\nAI class : ')
-        exec('ais.append('+ai_class+')')
-    return ais
+        ai_class = raw_input('\nAI class: ')
+        name = raw_input('name: ')
+        exec('ai = '+ai_class+'(race,\''+name+'\')')
+        race.add_ai(ai)
 
 if __name__ == '__main__':
     main()
