@@ -18,18 +18,24 @@ class Element:
     gh_opening = '# ghost format copyright Ziegler 2012\n'
 
     def __init__(self, race, color,
-                 position, velocity):
-        self.color = color
-        self.p = position
-        self.v = velocity
+                 position = None, velocity = None):
         self.register(race)
+        self.color = color
+        self.init_pv(position, velocity)
         self.init_history()
         self.avoid = False
-        self.play = 0
+        self.miss = 0
 
-    def init_pv(self, position):
-        self.p = np.array(position)
-        self.v = O.copy()
+    def init_pv(self, position = None,
+                velocity = None):
+        if position:
+            self.p = np.array(position, int)
+        else:
+            self.p = O.copy()
+        if velocity:
+            self.v = np.array(velocity, int)
+        else:
+            self.v = O.copy()
 
     def init_color(self, color):
         self.color = color
@@ -56,15 +62,9 @@ class Element:
         self.history.append(tuple(self.p) )
 
     def turn(self):
-        if self.race.display:
-            print '- - - - - - - - - - -'
-        if self.play:
-            if self.race.display:
-                print 'you miss %i turn'%self.play
-            self.play -= 1
-            return False
-        else:
-            return True
+        if self.miss:
+            self.miss -= 1
+        return self.miss
 
     def win(self, pos):
         self.p = np.array(pos, int)
@@ -92,17 +92,8 @@ class Car(Element):
     v_into = 0.5
 
     def __init__(self, race):
-        Element.__init__(self, race, 'white',
-                         O.copy(), O.copy() )   
+        Element.__init__(self, race, 'white')   
         self.avoid = True
-
-    def hit_speed(self):
-        v = abs(self.v).sum()
-        self.play = int(np.ceil(
-                -(1+v)+np.sqrt(1+2*v*(v+1) ) ) )
-        v_hit = self.v.copy()
-        self.v = O.copy()
-        return v_hit
 
     def hit(self, what):
         """
@@ -112,7 +103,7 @@ class Car(Element):
             print 'you crashed...'
         if what.__class__ == Player or what == 'wall':
             v = abs(self.v).sum()
-            self.play = int(np.ceil(
+            self.miss = int(np.ceil(
                     -(1+v)+np.sqrt(1+2*v*(v+1) ) ) )
             self.v = O.copy()
         elif what.__class__ == Missile:
@@ -126,7 +117,7 @@ class Car(Element):
         if element.__class__ == Missile:
             pass
         # if hasn't crashed
-        if not self.play:
+        if not self.miss:
             self.v = self.rand_dir()
         
     def rand_dir(self):
@@ -155,13 +146,8 @@ class Player(Car):
         self.missile = self.missile
 
     def turn(self):
-        if self.race.display:
-            print '- - - - - - - - - - -'
-        if self.play:
-            if self.race.display:
-                print 'you miss %i turn'%self.play
-            self.play -= 1
-            return False
+        if self.miss:
+            self.miss -= 1
         else:
             t = time()
             dv, missile = self.next_move()
@@ -171,7 +157,7 @@ class Player(Car):
                 self.race.add_missile(self)
                 self.missile -= 1
             self.v += dv
-            return True
+        return self.miss
 
     def next_pos(self):
         """
@@ -238,31 +224,23 @@ class Ghost(Element):
     opening = '# ghost format copyright Ziegler 2012\n'
 
     def __init__(self, race, color, name):
-        Element.__init__(self, race, color,
-                         O.copy(), O.copy() )   
+        Element.__init__(self, race, color)   
         self.read(name)
-        self.init_pv()
-
-    def init_pv(self, *args):
         self.p = np.array(self.history[0])
 
+    def init_pv(self, *args):
+        pass
+
+    def init_history(self):
+        self.history = []
+
     def turn(self):
-        if self.race.display:        
-            print '- - - - - - - - - - -'
-        if self.play:
-            if self.race.display:
-                print 'you miss %i turn'%self.play
-            self.play -= 1
-            return False
-        else:
-            try:
-                self.p = np.array(self.history[self.race.t])
-            except IndexError, err:
-                pass
-            return True
+        try:
+            self.p = np.array(self.history[self.race.t])
+        except IndexError, err:
+            pass
 
     def read(self, name):
-        self.history.pop()
         name += '.ghs'
         print 'opening', name, '...'
         f = open(name, 'r')
@@ -288,10 +266,10 @@ class Missile(Element):
             vx = np.random.rand()
             vy = np.random.rand()
             v = np.sqrt(vx**2+vy**2)
-        velocity = np.array([round(vx*self.V/v),
-                             round(vy*self.V/v)], int)
+        velocity = (round(vx*self.V/v),
+                    round(vy*self.V/v) )
         Element.__init__(self, race, 'black',
-                         car_position.copy(), velocity)
+                         tuple(car_position), velocity)
 
     def hit(self, what):
         self.race.i -= 1
