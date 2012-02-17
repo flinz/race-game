@@ -28,60 +28,67 @@ COLOR_GHOST = [
     'light_yellow'
     ]
 
+T_MAX = 1000
+
 class Race:
 
-    t_max = 1000
+    t = 0
+    playing = []
+    done = []
+    junk = []
+    ghosts = []
+    arrived = 0
 
     def __init__(self, n, shape, length, width,
                  display = True):
         """
         n: # players
         """
-        self.t = 0
         self.n = n
-        self.playing = []
-        self.done = []
-        self.ghosts = []
         self.circuit = Circuit(shape, length, width)
+        self.display = display
         for idx in xrange(n):
             self.add_player()
-        self.display = display
         if display:
             self.graphics = Graphics(self, self.circuit)
 
     def init(self):
-        self.t = 0
-        self.arrived_players = 0
+        self.t *= 0
+        self.arrived *= 0
         self.playing += self.done
         self.done = []
-        self.init_pv()
+        self.junk = []
+        self.init_geo()
+        if self.display:
+            self.init_color()
 
-    def init_pv(self):
+    def init_geo(self):
         starting_blocks = copy(self.circuit.start)
         np.random.shuffle(starting_blocks)
         for i in range(len(self.playing) ):
             element = self.playing[i]
-            element.init_pv(starting_blocks[i])
-            element.init_history()
+            element.init_geo(starting_blocks[i])
 
     def init_color(self):
         for i in range(len(self.playing) ):
             element = self.playing[i]
             element.init_color(COLOR_ORDER[i])
 
-    def out(self, element):
+    def out(self, element, junk = False):
         try:
             self.playing.remove(element)
         except ValueError, err:
             pass
-        if element not in self.done:
+        if junk and element not in self.junk:
+            self.junk.append(element)
+        if not junk and element not in self.done:
             self.done.append(element)
 
     def close(self):
-        for element in self.playing:
-            element.end()
+        while len(self.playing):
+            self.playing[0].end()
         for ghost in self.ghosts:
-            ghost.init_pv()
+            ghost.init_geo()
         self.fill_history()
 
     def fill_history(self):
@@ -222,13 +229,12 @@ class Race:
     def run(self):
         self.init()
         if self.display:
-            self.init_color()
             self.graphics.draw()
             tmp = raw_input('press RETURN to start, Q to quit ')
             if tmp == 'q':
                 sys.exit()
-        while self.arrived_players < min(3, max(self.n-1, 1)) and\
-                self.t < self.t_max:
+        while self.arrived < min(3, max(self.n-1, 1)) and\
+                self.t < T_MAX:
             self.turn()
         self.close()
 

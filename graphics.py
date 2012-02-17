@@ -79,7 +79,8 @@ class Graphics:
         self.image[tuple(element.p+X+Y)] = COLORS[element.color]
 
     def history(self, t):
-        for element in self.race.done + self.race.ghosts:
+        for element in self.race.done +\
+                self.race.junk + self.race.ghosts:
             for pos in element.history[:t]:
                 if len(pos) > 0:
                     pos = replace_tuple(pos)

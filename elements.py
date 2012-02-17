@@ -15,40 +15,34 @@ MISSILE = 'm'
 
 class Element:
 
+    miss = 0
+    avoid = False
     gh_opening = '# ghost format copyright Ziegler 2012\n'
 
-    def __init__(self, race, color,
-                 position = None, velocity = None):
-        self.register(race)
-        self.color = color
-        self.init_pv(position, velocity)
-        self.init_history()
-        self.avoid = False
-        self.miss = 0
+    def __init__(self, race, color = (0,0,0),
+                 position = (0,0),
+                 velocity = (0,0) ):
+        self.register(race)        
+        if race.display:
+            self.init_color(color)
+        self.init_geo(position, velocity)
 
-    def init_pv(self, position = None,
-                velocity = None):
-        if position:
-            self.p = np.array(position, int)
-        else:
-            self.p = O.copy()
-        if velocity:
-            self.v = np.array(velocity, int)
-        else:
-            self.v = O.copy()
+    def init_geo(self, position = (0,0),
+                 velocity = (0,0) ):
+        self.miss = 0
+        self.p = np.array(position, int)
+        self.v = np.array(velocity, int)
+        history = []
+        for _ in xrange(self.race.t):
+            history.append( () )
+        history.append(tuple(self.p) )
+        self.history = history        
 
     def init_color(self, color):
         self.color = color
 
     def register(self, race):
         self.race = race
-
-    def init_history(self):
-        history = []
-        for _ in xrange(self.race.t):
-            history.append( () )
-        history.append(tuple(self.p) )
-        self.history = history
 
     def fill_history(self):
         for _ in xrange(
@@ -70,9 +64,9 @@ class Element:
         self.p = np.array(pos, int)
         self.end()
 
-    def end(self):
+    def end(self, junk = False):
         self.rec_position()
-        self.race.out(self)
+        self.race.out(self, junk)
 
     def write(self, name):
         print 'writing ghost '+name
@@ -92,7 +86,7 @@ class Car(Element):
     v_into = 0.5
 
     def __init__(self, race):
-        Element.__init__(self, race, 'white')   
+        Element.__init__(self, race)   
         self.avoid = True
 
     def hit(self, what):
@@ -115,7 +109,8 @@ class Car(Element):
                       self.v_into*self.v).round()
             self.race.move(self)
         if element.__class__ == Missile:
-            pass
+            self.v = self.rand_dir()
+            self.race.move(self)
         # if hasn't crashed
         if not self.miss:
             self.v = self.rand_dir()
@@ -131,7 +126,7 @@ class Car(Element):
 
     def win(self, pos):
         Element.win(self, pos)
-        self.race.arrived_players += 1
+        self.race.arrived += 1
 
 ############### players #################
 
@@ -224,15 +219,11 @@ class Ghost(Element):
     opening = '# ghost format copyright Ziegler 2012\n'
 
     def __init__(self, race, color, name):
-        Element.__init__(self, race, color)   
         self.read(name)
-        self.p = np.array(self.history[0])
+        Element.__init__(self, race, color)   
 
-    def init_pv(self, *args):
-        pass
-
-    def init_history(self):
-        self.history = []
+    def init_geo(self, *args):
+        self.p = np.array(self.history[0])        
 
     def turn(self):
         try:
@@ -241,6 +232,7 @@ class Ghost(Element):
             pass
 
     def read(self, name):
+        self.history = []
         name += '.ghs'
         print 'opening', name, '...'
         f = open(name, 'r')
@@ -279,4 +271,4 @@ class Missile(Element):
         self.end()
 
     def end(self):
-        Element.end(self)
+        Element.end(self, junk = True)
